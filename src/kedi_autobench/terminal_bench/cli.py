@@ -1,0 +1,57 @@
+from __future__ import annotations
+
+import argparse
+from collections.abc import Sequence
+from pathlib import Path
+
+from kedi_autobench.terminal_bench.capture import record_harbor_job
+from kedi_autobench.terminal_bench.runner import run_then_record
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="kedi-autobench-terminal-bench")
+    subparsers = parser.add_subparsers(dest="subcommand", required=True)
+
+    record = subparsers.add_parser("record", help="Record an existing Harbor job.")
+    _shared_options(record)
+
+    run = subparsers.add_parser(
+        "run",
+        help="Run Harbor first, then capture its completed job without changing its exit status.",
+    )
+    _shared_options(run)
+    run.add_argument("command", nargs=argparse.REMAINDER)
+    return parser
+
+
+def _shared_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--job-dir", type=Path, required=True)
+    parser.add_argument("--record-dir", type=Path, required=True)
+    parser.add_argument("--max-evidence-file-bytes", type=int, default=512_000_000)
+    parser.add_argument("--concurrency", type=int, default=4)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = _parser().parse_args(argv)
+    if args.subcommand == "record":
+        record_harbor_job(
+            args.job_dir,
+            args.record_dir,
+            max_evidence_file_bytes=args.max_evidence_file_bytes,
+            concurrency=args.concurrency,
+        )
+        return 0
+    command = list(args.command)
+    if command and command[0] == "--":
+        command.pop(0)
+    return run_then_record(
+        command,
+        job_dir=args.job_dir,
+        output_dir=args.record_dir,
+        max_evidence_file_bytes=args.max_evidence_file_bytes,
+        concurrency=args.concurrency,
+    )
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

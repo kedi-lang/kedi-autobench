@@ -1,0 +1,71 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kedi-autobench"
+version = "0.1.0"
+description = "Autobench instrumentation for Kedi"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
+dependencies = [
+    "autobench>=0.3,<0.4",
+    "kedi>=0.4,<0.5",
+]
+
+[project.urls]
+Repository = "https://github.com/kedi-lang/kedi-autobench"
+Issues = "https://github.com/kedi-lang/kedi-autobench/issues"
+
+[project.optional-dependencies]
+pydantic-ai = ["pydantic-ai==2.36.0"]
+
+[project.scripts]
+kedi-autobench-terminal-bench = "kedi_autobench.terminal_bench.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kedi_autobench"]
+
+[tool.uv.sources]
+autobench = {git = "https://github.com/vcoderun/autobench.git", rev = "415c2e6100e85b5671f9f045ca6dc4e4c78f081c"}
+kedi = {git = "https://github.com/kedi-lang/kedi.git", rev = "69ad944735b067ede7393f5c83a3263b591ffc2c"}
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.39.6",
+    "pre-commit>=4.6",
+    "pytest>=9",
+    "pytest-asyncio>=1.3",
+    "pytest-cov>=7.1",
+    "ruff>=0.15.6",
+    "ty>=0.0.22",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers"
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+branch = true
+source = ["src/kedi_autobench"]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+
+[tool.basedpyright]
+pythonVersion = "3.11"
+typeCheckingMode = "strict"
+include = ["src", "tests"]
+
+[[tool.basedpyright.executionEnvironments]]
+root = "."
+extraPaths = ["src"]
+
+[tool.ty.environment]
+python-version = "3.11"
