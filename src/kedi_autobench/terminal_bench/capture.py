@@ -11,13 +11,14 @@ from autobench import Benchmark, Case, FactorValue, FileRecorder, Variant, run_b
 from kedi_autobench.terminal_bench.models import HarborTrialResult, TrialLocation
 
 _CASE_COMPONENT = re.compile(r"[^A-Za-z0-9_.-]+")
+DEFAULT_MAX_EVIDENCE_FILE_BYTES = 20_000_000
 
 
 def record_harbor_job(
     job_dir: Path,
     output_dir: Path,
     *,
-    max_evidence_file_bytes: int = 512_000_000,
+    max_evidence_file_bytes: int = DEFAULT_MAX_EVIDENCE_FILE_BYTES,
     concurrency: int = 4,
 ) -> Path:
     return asyncio.run(
@@ -34,7 +35,7 @@ async def record_harbor_job_async(
     job_dir: Path,
     output_dir: Path,
     *,
-    max_evidence_file_bytes: int = 512_000_000,
+    max_evidence_file_bytes: int = DEFAULT_MAX_EVIDENCE_FILE_BYTES,
     concurrency: int = 4,
 ) -> Path:
     if max_evidence_file_bytes <= 0:
@@ -163,4 +164,9 @@ def _load_json_if_present(path: Path) -> dict[str, Any]:
     return cast(dict[str, Any], value)
 
 
-__all__ = ("discover_trials", "record_harbor_job", "record_harbor_job_async")
+__all__ = (
+    "DEFAULT_MAX_EVIDENCE_FILE_BYTES",
+    "discover_trials",
+    "record_harbor_job",
+    "record_harbor_job_async",
+)

@@ -15,6 +15,7 @@ import pytest
 from autobench import Case, replay_experiment
 
 from kedi_autobench.terminal_bench.capture import (
+    DEFAULT_MAX_EVIDENCE_FILE_BYTES,
     _load_json_if_present,
     discover_trials,
     record_harbor_job,
@@ -181,6 +182,10 @@ def test_record_harbor_job_marks_oversized_evidence_without_failing_trial(
     run = replay_experiment(output).runs[0]
     assert run.task_result.output["skipped_file_count"] > 0
     assert _observations(run)["terminal_bench.evidence_complete"] is False
+
+
+def test_terminal_bench_evidence_default_is_bounded() -> None:
+    assert DEFAULT_MAX_EVIDENCE_FILE_BYTES == 20_000_000
 
 
 def test_capture_imports_failure_and_harbor_usage_when_kedi_result_is_missing(

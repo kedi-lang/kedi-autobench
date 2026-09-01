@@ -4,7 +4,10 @@ import argparse
 from collections.abc import Sequence
 from pathlib import Path
 
-from kedi_autobench.terminal_bench.capture import record_harbor_job
+from kedi_autobench.terminal_bench.capture import (
+    DEFAULT_MAX_EVIDENCE_FILE_BYTES,
+    record_harbor_job,
+)
 from kedi_autobench.terminal_bench.runner import run_then_record
 
 
@@ -27,7 +30,11 @@ def _parser() -> argparse.ArgumentParser:
 def _shared_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--job-dir", type=Path, required=True)
     parser.add_argument("--record-dir", type=Path, required=True)
-    parser.add_argument("--max-evidence-file-bytes", type=int, default=512_000_000)
+    parser.add_argument(
+        "--max-evidence-file-bytes",
+        type=int,
+        default=DEFAULT_MAX_EVIDENCE_FILE_BYTES,
+    )
     parser.add_argument("--concurrency", type=int, default=4)
 
 

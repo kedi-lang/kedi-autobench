@@ -106,4 +106,7 @@ The record contains official rewards, phase durations, request/tool/token/cache/
 Kedi completion state, and bounded copies of Harbor job, agent, verifier, and artifact evidence.
 Text and JSON evidence is redacted before it reaches Autobench, including extensionless UTF-8 files
 such as `.env`. Binary evidence is copied unchanged. Files larger than
-`--max-evidence-file-bytes` are represented in the evidence index but not copied.
+`--max-evidence-file-bytes` are represented in the evidence index but not copied. The default is
+20 MB per file so large Harbor terminal payloads remain authoritative in the Harbor job without
+being duplicated into the Autobench record; raise the limit explicitly when a self-contained copy
+is required.
