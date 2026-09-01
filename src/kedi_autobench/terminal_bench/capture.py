@@ -12,6 +12,7 @@ from kedi_autobench.terminal_bench.models import HarborTrialResult, TrialLocatio
 
 _CASE_COMPONENT = re.compile(r"[^A-Za-z0-9_.-]+")
 DEFAULT_MAX_EVIDENCE_FILE_BYTES = 20_000_000
+DEFAULT_MAX_EVIDENCE_TOTAL_BYTES = 50_000_000
 
 
 def record_harbor_job(
@@ -19,6 +20,7 @@ def record_harbor_job(
     output_dir: Path,
     *,
     max_evidence_file_bytes: int = DEFAULT_MAX_EVIDENCE_FILE_BYTES,
+    max_evidence_total_bytes: int = DEFAULT_MAX_EVIDENCE_TOTAL_BYTES,
     concurrency: int = 4,
 ) -> Path:
     return asyncio.run(
@@ -26,6 +28,7 @@ def record_harbor_job(
             job_dir,
             output_dir,
             max_evidence_file_bytes=max_evidence_file_bytes,
+            max_evidence_total_bytes=max_evidence_total_bytes,
             concurrency=concurrency,
         )
     )
@@ -36,17 +39,24 @@ async def record_harbor_job_async(
     output_dir: Path,
     *,
     max_evidence_file_bytes: int = DEFAULT_MAX_EVIDENCE_FILE_BYTES,
+    max_evidence_total_bytes: int = DEFAULT_MAX_EVIDENCE_TOTAL_BYTES,
     concurrency: int = 4,
 ) -> Path:
     if max_evidence_file_bytes <= 0:
         raise ValueError("max_evidence_file_bytes must be positive")
+    if max_evidence_total_bytes <= 0:
+        raise ValueError("max_evidence_total_bytes must be positive")
     if concurrency <= 0:
         raise ValueError("concurrency must be positive")
     job_dir = job_dir.expanduser().resolve()
     output_dir = output_dir.expanduser().resolve()
     locations = discover_trials(job_dir)
     manifest = _load_json_if_present(job_dir / "kedi-manifest.json")
-    variant = _variant(manifest, max_evidence_file_bytes=max_evidence_file_bytes)
+    variant = _variant(
+        manifest,
+        max_evidence_file_bytes=max_evidence_file_bytes,
+        max_evidence_total_bytes=max_evidence_total_bytes,
+    )
     cases: list[Case | dict[str, Any]] = [
         Case(
             id=location.case_id,
@@ -125,6 +135,7 @@ def _variant(
     manifest: dict[str, Any],
     *,
     max_evidence_file_bytes: int,
+    max_evidence_total_bytes: int,
 ) -> Variant:
     digest = manifest.get("material_digest")
     suffix = str(digest)[:12] if digest else "unmanifested"
@@ -141,6 +152,7 @@ def _variant(
                 value=json.dumps(policy, ensure_ascii=False, sort_keys=True),
             ),
             FactorValue(name="max_evidence_file_bytes", value=max_evidence_file_bytes),
+            FactorValue(name="max_evidence_total_bytes", value=max_evidence_total_bytes),
         ],
     )
 
@@ -166,6 +178,7 @@ def _load_json_if_present(path: Path) -> dict[str, Any]:
 
 __all__ = (
     "DEFAULT_MAX_EVIDENCE_FILE_BYTES",
+    "DEFAULT_MAX_EVIDENCE_TOTAL_BYTES",
     "discover_trials",
     "record_harbor_job",
     "record_harbor_job_async",

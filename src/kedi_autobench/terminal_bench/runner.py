@@ -10,6 +10,7 @@ from kedi.integrations.harbor.records import atomic_write_json, redact_text
 
 from kedi_autobench.terminal_bench.capture import (
     DEFAULT_MAX_EVIDENCE_FILE_BYTES,
+    DEFAULT_MAX_EVIDENCE_TOTAL_BYTES,
     record_harbor_job,
 )
 
@@ -22,6 +23,7 @@ def run_then_record(
     job_dir: Path,
     output_dir: Path,
     max_evidence_file_bytes: int = DEFAULT_MAX_EVIDENCE_FILE_BYTES,
+    max_evidence_total_bytes: int = DEFAULT_MAX_EVIDENCE_TOTAL_BYTES,
     concurrency: int = 4,
     recorder: Recorder = record_harbor_job,
 ) -> int:
@@ -34,6 +36,7 @@ def run_then_record(
                 job_dir,
                 output_dir,
                 max_evidence_file_bytes=max_evidence_file_bytes,
+                max_evidence_total_bytes=max_evidence_total_bytes,
                 concurrency=concurrency,
             )
         except Exception as exc:  # noqa: BLE001 - capture must not change Harbor's result

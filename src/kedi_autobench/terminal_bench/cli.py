@@ -6,6 +6,7 @@ from pathlib import Path
 
 from kedi_autobench.terminal_bench.capture import (
     DEFAULT_MAX_EVIDENCE_FILE_BYTES,
+    DEFAULT_MAX_EVIDENCE_TOTAL_BYTES,
     record_harbor_job,
 )
 from kedi_autobench.terminal_bench.runner import run_then_record
@@ -35,6 +36,11 @@ def _shared_options(parser: argparse.ArgumentParser) -> None:
         type=int,
         default=DEFAULT_MAX_EVIDENCE_FILE_BYTES,
     )
+    parser.add_argument(
+        "--max-evidence-total-bytes",
+        type=int,
+        default=DEFAULT_MAX_EVIDENCE_TOTAL_BYTES,
+    )
     parser.add_argument("--concurrency", type=int, default=4)
 
 
@@ -45,6 +51,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.job_dir,
             args.record_dir,
             max_evidence_file_bytes=args.max_evidence_file_bytes,
+            max_evidence_total_bytes=args.max_evidence_total_bytes,
             concurrency=args.concurrency,
         )
         return 0
@@ -56,6 +63,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         job_dir=args.job_dir,
         output_dir=args.record_dir,
         max_evidence_file_bytes=args.max_evidence_file_bytes,
+        max_evidence_total_bytes=args.max_evidence_total_bytes,
         concurrency=args.concurrency,
     )
 

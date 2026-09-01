@@ -52,7 +52,14 @@ def capture_trial(ctx: RunContext, case: Case) -> CapturedTrial:
     job_dir = Path(_required_string(value, "job_dir")).resolve()
     trial_dir = Path(_required_string(value, "trial_dir")).resolve()
     _require_descendant(trial_dir, job_dir)
-    max_file_bytes = _positive_int(ctx.factor("max_evidence_file_bytes"))
+    max_file_bytes = _positive_int(
+        ctx.factor("max_evidence_file_bytes"),
+        name="max_evidence_file_bytes",
+    )
+    max_total_bytes = _positive_int(
+        ctx.factor("max_evidence_total_bytes"),
+        name="max_evidence_total_bytes",
+    )
 
     harbor = HarborTrialResult.model_validate_json(
         (trial_dir / "result.json").read_text(encoding="utf-8")
@@ -77,6 +84,7 @@ def capture_trial(ctx: RunContext, case: Case) -> CapturedTrial:
             job_dir=job_dir,
             trial_dir=trial_dir,
             max_file_bytes=max_file_bytes,
+            max_total_bytes=max_total_bytes,
             span_id=span.id,
         )
         ctx.check(
@@ -85,7 +93,7 @@ def capture_trial(ctx: RunContext, case: Case) -> CapturedTrial:
             reason=(
                 "all discovered evidence files were attached"
                 if all(item.attached for item in evidence)
-                else "one or more evidence files exceeded the configured capture bound"
+                else "one or more evidence files exceeded the configured capture bounds"
             ),
             span_id=span.id,
         )
@@ -105,7 +113,7 @@ def capture_trial(ctx: RunContext, case: Case) -> CapturedTrial:
             kedi_state=None if kedi is None else kedi.state,
             usage=usage,
             evidence_file_count=sum(item.attached for item in evidence),
-            evidence_bytes=sum(item.byte_count for item in evidence if item.attached),
+            evidence_bytes=sum(item.attached_byte_count or 0 for item in evidence),
             skipped_file_count=sum(not item.attached for item in evidence),
         )
         span.set_output(result.model_dump(mode="json"))
@@ -242,10 +250,12 @@ def _attach_evidence(
     job_dir: Path,
     trial_dir: Path,
     max_file_bytes: int,
+    max_total_bytes: int,
     span_id: str,
 ) -> tuple[EvidenceFile, ...]:
     candidates = _evidence_candidates(job_dir, trial_dir)
     evidence: list[EvidenceFile] = []
+    attached_bytes = 0
     with tempfile.TemporaryDirectory(prefix="kedi-autobench-redacted-") as raw_temp:
         temp = Path(raw_temp)
         for source, relative in candidates:
@@ -264,6 +274,33 @@ def _attach_evidence(
                 )
                 continue
             prepared = _sanitized_copy(source, relative=relative, root=temp)
+            prepared_bytes = prepared.stat().st_size
+            if prepared_bytes > max_file_bytes:
+                evidence.append(
+                    EvidenceFile(
+                        path=relative,
+                        source="harbor",
+                        byte_count=byte_count,
+                        sha256=digest,
+                        attached=False,
+                        reason=(
+                            f"sanitized evidence exceeds max_evidence_file_bytes={max_file_bytes}"
+                        ),
+                    )
+                )
+                continue
+            if attached_bytes + prepared_bytes > max_total_bytes:
+                evidence.append(
+                    EvidenceFile(
+                        path=relative,
+                        source="harbor",
+                        byte_count=byte_count,
+                        sha256=digest,
+                        attached=False,
+                        reason=f"exceeds max_evidence_total_bytes={max_total_bytes}",
+                    )
+                )
+                continue
             media_type = mimetypes.guess_type(source.name)[0] or "application/octet-stream"
             ctx.artifact_file(
                 "terminal_bench.file." + relative.replace("/", "."),
@@ -275,6 +312,7 @@ def _attach_evidence(
                 span_id=span_id,
                 tags={"harbor.path": relative, "sha256.source": digest},
             )
+            attached_bytes += prepared_bytes
             evidence.append(
                 EvidenceFile(
                     path=relative,
@@ -282,30 +320,35 @@ def _attach_evidence(
                     byte_count=byte_count,
                     sha256=digest,
                     attached=True,
+                    attached_byte_count=prepared_bytes,
                 )
             )
     return tuple(evidence)
 
 
 def _evidence_candidates(job_dir: Path, trial_dir: Path) -> tuple[tuple[Path, str], ...]:
-    found: dict[str, Path] = {}
+    found: list[tuple[Path, str]] = []
+    seen: set[str] = set()
+
+    def add(path: Path, relative: str) -> None:
+        if relative in seen or not path.is_file() or path.is_symlink():
+            return
+        seen.add(relative)
+        found.append((path, relative))
+
     for name in _JOB_FILES:
-        path = job_dir / name
-        if path.is_file() and not path.is_symlink():
-            found[f"job/{name}"] = path
+        add(job_dir / name, f"job/{name}")
     for name in _TRIAL_FILES:
-        path = trial_dir / name
-        if path.is_file() and not path.is_symlink():
-            found[f"trial/{name}"] = path
+        add(trial_dir / name, f"trial/{name}")
     for directory in ("agent", "artifacts", "verifier"):
         root = trial_dir / directory
         if not root.is_dir() or root.is_symlink():
             continue
-        for path in root.rglob("*"):
-            if path.is_file() and not path.is_symlink():
-                relative = path.relative_to(trial_dir).as_posix()
-                found[f"trial/{relative}"] = path
-    return tuple((found[name], name) for name in sorted(found))
+        paths = sorted(root.rglob("*"), key=lambda path: path.relative_to(root).as_posix())
+        for path in paths:
+            relative = path.relative_to(trial_dir).as_posix()
+            add(path, f"trial/{relative}")
+    return tuple(found)
 
 
 def _sanitized_copy(source: Path, *, relative: str, root: Path) -> Path:
@@ -413,9 +456,9 @@ def _required_string(value: Mapping[str, Any], name: str) -> str:
     return item
 
 
-def _positive_int(value: Any) -> int:
+def _positive_int(value: Any, *, name: str = "value") -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
-        raise TypeError("max_evidence_file_bytes must be a positive integer")
+        raise TypeError(f"{name} must be a positive integer")
     return value
 
 

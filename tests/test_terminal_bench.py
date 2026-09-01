@@ -16,6 +16,7 @@ from autobench import Case, replay_experiment
 
 from kedi_autobench.terminal_bench.capture import (
     DEFAULT_MAX_EVIDENCE_FILE_BYTES,
+    DEFAULT_MAX_EVIDENCE_TOTAL_BYTES,
     _load_json_if_present,
     discover_trials,
     record_harbor_job,
@@ -186,6 +187,31 @@ def test_record_harbor_job_marks_oversized_evidence_without_failing_trial(
 
 def test_terminal_bench_evidence_default_is_bounded() -> None:
     assert DEFAULT_MAX_EVIDENCE_FILE_BYTES == 20_000_000
+    assert DEFAULT_MAX_EVIDENCE_TOTAL_BYTES == 50_000_000
+
+
+def test_record_harbor_job_bounds_total_attached_evidence(tmp_path: Path) -> None:
+    job = _job(tmp_path)
+    trial = next(path.parent for path in job.glob("*/result.json"))
+    (trial / "artifacts" / "large-a.txt").write_text("a" * 700, encoding="utf-8")
+    (trial / "artifacts" / "large-b.txt").write_text("b" * 700, encoding="utf-8")
+    (trial / "artifacts" / "compact.json").write_text(
+        json.dumps({"values": [0] * 200}, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    output = tmp_path / "record"
+
+    record_harbor_job(
+        job,
+        output,
+        max_evidence_file_bytes=1_000,
+        max_evidence_total_bytes=1_500,
+    )
+
+    run = replay_experiment(output).runs[0]
+    assert run.task_result.output["evidence_bytes"] <= 1_500
+    assert run.task_result.output["skipped_file_count"] > 0
+    assert _observations(run)["terminal_bench.evidence_complete"] is False
 
 
 def test_capture_imports_failure_and_harbor_usage_when_kedi_result_is_missing(
@@ -269,6 +295,8 @@ def test_record_harbor_job_rejects_invalid_bounds(tmp_path: Path) -> None:
     job = _job(tmp_path)
     with pytest.raises(ValueError, match="max_evidence_file_bytes"):
         record_harbor_job(job, tmp_path / "record-a", max_evidence_file_bytes=0)
+    with pytest.raises(ValueError, match="max_evidence_total_bytes"):
+        record_harbor_job(job, tmp_path / "record-total", max_evidence_total_bytes=0)
     with pytest.raises(ValueError, match="concurrency"):
         record_harbor_job(job, tmp_path / "record-b", concurrency=0)
 

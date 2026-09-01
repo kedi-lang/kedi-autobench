@@ -100,6 +100,7 @@ class EvidenceFile(BaseModel):
     byte_count: int
     sha256: str
     attached: bool
+    attached_byte_count: int | None = None
     reason: str | None = None
 
 

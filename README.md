@@ -107,6 +107,8 @@ Kedi completion state, and bounded copies of Harbor job, agent, verifier, and ar
 Text and JSON evidence is redacted before it reaches Autobench, including extensionless UTF-8 files
 such as `.env`. Binary evidence is copied unchanged. Files larger than
 `--max-evidence-file-bytes` are represented in the evidence index but not copied. The default is
-20 MB per file so large Harbor terminal payloads remain authoritative in the Harbor job without
-being duplicated into the Autobench record; raise the limit explicitly when a self-contained copy
-is required.
+20 MB per file. Attached evidence is also limited to 50 MB per trial by
+`--max-evidence-total-bytes`. Core job and trial records are considered before agent, artifact, and
+verifier directories. Files omitted by either bound retain their path, source size, and SHA-256 in
+the evidence index, so large Harbor payloads remain authoritative without being duplicated into
+the Autobench record. Raise the limits explicitly when a self-contained copy is required.
