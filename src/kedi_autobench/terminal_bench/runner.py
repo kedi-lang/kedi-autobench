@@ -39,13 +39,14 @@ def run_then_record(
                 max_evidence_total_bytes=max_evidence_total_bytes,
                 concurrency=concurrency,
             )
+            _capture_error_path(output_dir).unlink(missing_ok=True)
         except Exception as exc:  # noqa: BLE001 - capture must not change Harbor's result
             _write_capture_error(output_dir, exc)
     return completed.returncode
 
 
 def _write_capture_error(output_dir: Path, exc: Exception) -> None:
-    path = output_dir.with_name(f"{output_dir.name}.capture-error.json")
+    path = _capture_error_path(output_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "captured_at": datetime.now(UTC).isoformat(),
@@ -54,6 +55,10 @@ def _write_capture_error(output_dir: Path, exc: Exception) -> None:
         "traceback": redact_text("".join(traceback.format_exception(exc))),
     }
     atomic_write_json(path, payload)
+
+
+def _capture_error_path(output_dir: Path) -> Path:
+    return output_dir.with_name(f"{output_dir.name}.capture-error.json")
 
 
 __all__ = ("run_then_record",)

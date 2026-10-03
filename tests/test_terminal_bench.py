@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from autobench import Case, replay_experiment
+from autobench import Case, EndReason, ErrorRecord, ExperimentStatus, replay_experiment
 
 from kedi_autobench.terminal_bench.capture import (
     DEFAULT_MAX_EVIDENCE_FILE_BYTES,
@@ -32,7 +32,13 @@ from kedi_autobench.terminal_bench.task import (
     _required_string,
     _sanitize_json,
     _sanitized_copy,
-    _usage,
+)
+from kedi_autobench.terminal_bench.usage import trial_usage
+from kedi_autobench.terminal_bench.validation import (
+    CaptureValidationError,
+    capture_record_complete,
+    validate_capture_result,
+    validate_harbor_record,
 )
 
 
@@ -170,6 +176,164 @@ def test_record_harbor_job_preserves_metrics_artifacts_and_redacts_secrets(
     assert b"sk-extensionlesssecret123456" not in payload
     assert b"abcdefghijklmnopqrstuvwxyz" not in payload
     assert b"[REDACTED]" in payload
+
+
+def test_record_harbor_job_uses_replayable_unknown_factors_without_manifest(
+    tmp_path: Path,
+) -> None:
+    job = _job(tmp_path)
+    (job / "kedi-manifest.json").unlink()
+    output = tmp_path / "record"
+
+    record_harbor_job(job, output)
+
+    run = replay_experiment(output).runs[0]
+    factors = {factor.name: factor.value for factor in run.factors}
+    assert factors["model"] == "unknown"
+    assert factors["adapter"] == "unknown"
+    assert factors["effort"] == "unknown"
+
+
+def test_capture_validation_accepts_reward_zero_and_matches_source(tmp_path: Path) -> None:
+    job = _job(tmp_path, trials=2)
+    output = tmp_path / "record"
+
+    record_harbor_job(job, output)
+
+    assert validate_harbor_record(output, job_dir=job) == output.resolve()
+    assert capture_record_complete(output, locations=discover_trials(job)) is True
+    result = replay_experiment(output)
+    assert any(run.task_result.output["rewards"] == {"reward": 0} for run in result.runs)
+
+
+def test_capture_validation_rejects_task_error_and_source_drift(tmp_path: Path) -> None:
+    job = _job(tmp_path)
+    output = tmp_path / "record"
+    record_harbor_job(job, output)
+    locations = discover_trials(job)
+    result = replay_experiment(output)
+    run = result.runs[0]
+    invalid_task = run.task_result.model_copy(update={"output": None})
+    invalid_run = run.model_copy(update={"task_result": invalid_task})
+    invalid_result = result.model_copy(update={"runs": [invalid_run]})
+
+    with pytest.raises(CaptureValidationError, match="invalid captured output"):
+        validate_capture_result(invalid_result, locations=locations)
+
+    source_path = locations[0].trial_dir / "result.json"
+    source = json.loads(source_path.read_text(encoding="utf-8"))
+    source["verifier_result"]["rewards"]["reward"] = 0
+    _write_json(source_path, source)
+    with pytest.raises(CaptureValidationError, match="rewards differs from source"):
+        validate_harbor_record(output, job_dir=job)
+
+
+def test_capture_validation_reports_incomplete_experiment_shape(tmp_path: Path) -> None:
+    job = _job(tmp_path, trials=2)
+    output = tmp_path / "record"
+    record_harbor_job(job, output)
+    locations = discover_trials(job)
+    result = replay_experiment(output)
+    first, second = result.runs
+    failed = first.model_copy(
+        update={"error": ErrorRecord(error_type="CaptureError", message="failed")}
+    )
+    partial = second.model_copy(update={"partial": True, "end_reason": EndReason.TIMEOUT})
+    unexpected = second.model_copy(update={"case_id": "unexpected"})
+    termination = result.termination.model_copy(
+        update={
+            "status": ExperimentStatus.ABORTED,
+            "planned_run_ids": (*result.termination.planned_run_ids, "missing-run"),
+        }
+    )
+    invalid = result.model_copy(
+        update={"runs": [failed, partial, unexpected], "termination": termination}
+    )
+
+    with pytest.raises(CaptureValidationError) as raised:
+        validate_capture_result(invalid, locations=locations)
+    message = str(raised.value)
+    assert "experiment status is 'aborted'" in message
+    assert "expected 2 runs, found 3" in message
+    assert "case IDs differ" in message
+    assert "recorded run IDs differ" in message
+    assert "has task error 'CaptureError'" in message
+    assert "is partial" in message
+    assert "ended as 'timeout'" in message
+
+
+def test_capture_validation_rejects_incomplete_record(tmp_path: Path) -> None:
+    job = _job(tmp_path)
+    output = tmp_path / "record"
+    record_harbor_job(job, output)
+    next(output.glob("cases/*/*/run.yaml")).unlink()
+
+    with pytest.raises(CaptureValidationError, match="cannot be replayed"):
+        validate_harbor_record(output, job_dir=job)
+    assert capture_record_complete(output, locations=discover_trials(job)) is False
+
+
+def test_capture_validation_rejects_forged_or_duplicate_run_ids(tmp_path: Path) -> None:
+    job = _job(tmp_path, trials=2)
+    output = tmp_path / "record"
+    record_harbor_job(job, output)
+    locations = discover_trials(job)
+    result = replay_experiment(output)
+    first, second = result.runs
+
+    forged = first.model_copy(update={"run_id": "unplanned-run"})
+    with pytest.raises(CaptureValidationError, match="actual run IDs differ"):
+        validate_capture_result(
+            result.model_copy(update={"runs": [forged, second]}), locations=locations
+        )
+
+    empty_plan = result.termination.model_copy(
+        update={"planned_run_ids": (), "recorded_run_ids": ()}
+    )
+    with pytest.raises(CaptureValidationError, match="actual run IDs differ"):
+        validate_capture_result(
+            result.model_copy(update={"termination": empty_plan}), locations=locations
+        )
+
+    duplicate = second.model_copy(update={"run_id": first.run_id})
+    with pytest.raises(CaptureValidationError, match="duplicate run IDs"):
+        validate_capture_result(
+            result.model_copy(update={"runs": [first, duplicate]}), locations=locations
+        )
+
+
+def test_capture_validation_preserves_harbor_failures_and_kedi_state(tmp_path: Path) -> None:
+    job = _job(tmp_path)
+    source_path = job / "task-1__1" / "result.json"
+    source = json.loads(source_path.read_text(encoding="utf-8"))
+    source["exception_info"] = {"exception_type": "AgentTimeoutError"}
+    source["verifier_result"] = None
+    _write_json(source_path, source)
+    kedi_path = source_path.parent / "agent" / "kedi-result.json"
+    kedi = json.loads(kedi_path.read_text(encoding="utf-8"))
+    kedi["state"] = "failed"
+    _write_json(kedi_path, kedi)
+    output = tmp_path / "record"
+
+    record_harbor_job(job, output)
+    assert validate_harbor_record(output, job_dir=job) == output.resolve()
+    result = replay_experiment(output)
+    run = result.runs[0]
+    assert run.task_result.output["harbor_exception"] == "AgentTimeoutError"
+    assert run.task_result.output["kedi_state"] == "failed"
+    for field, value, message in (
+        ("harbor_exception", None, "Harbor exception differs from source"),
+        ("kedi_state", "completed", "Kedi state differs from source"),
+    ):
+        altered_output = dict(run.task_result.output)
+        altered_output[field] = value
+        altered_task = run.task_result.model_copy(update={"output": altered_output})
+        altered_run = run.model_copy(update={"task_result": altered_task})
+        with pytest.raises(CaptureValidationError, match=message):
+            validate_capture_result(
+                result.model_copy(update={"runs": [altered_run]}),
+                locations=discover_trials(job),
+            )
 
 
 def test_record_harbor_job_marks_oversized_evidence_without_failing_trial(
@@ -380,11 +544,33 @@ def test_run_then_record_preserves_real_subprocess_exit_and_records_afterward(
     assert len(replay_experiment(output).runs) == 1
 
 
+def test_successful_recapture_removes_stale_capture_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job = _job(tmp_path)
+    output = tmp_path / "record"
+    error = tmp_path / "record.capture-error.json"
+    error.write_text("{}", encoding="utf-8")
+
+    def fake_run(*_args: Any, **_kwargs: Any) -> SimpleNamespace:
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(
+        "kedi_autobench.terminal_bench.runner.subprocess.run",
+        fake_run,
+    )
+
+    assert run_then_record(["harbor", "run"], job_dir=job, output_dir=output) == 0
+    assert error.exists() is False
+
+
 def test_cli_records_existing_job_and_requires_run_command(tmp_path: Path) -> None:
     job = _job(tmp_path)
     output = tmp_path / "record"
     assert main(["record", "--job-dir", str(job), "--record-dir", str(output)]) == 0
     assert (output / "experiment.yaml").is_file()
+    assert main(["validate", "--job-dir", str(job), "--record-dir", str(output)]) == 0
 
     with pytest.raises(ValueError, match="must not be empty"):
         main(
@@ -460,13 +646,13 @@ def test_capture_helper_boundaries(tmp_path: Path) -> None:
     }
 
     no_usage = HarborTrialResult(task_name="task", trial_name="trial")
-    assert _usage(no_usage, None) == {"total_tokens": 0}
+    assert trial_usage(no_usage, None) == {"total_tokens": 0}
     partial_usage = HarborTrialResult(
         task_name="task",
         trial_name="trial",
         agent_result=AgentContext(n_input_tokens=3, n_output_tokens=2, metadata=None),
     )
-    assert _usage(partial_usage, None)["total_tokens"] == 5
+    assert trial_usage(partial_usage, None)["total_tokens"] == 5
 
     assert TimingInfo().duration_seconds is None
     assert (

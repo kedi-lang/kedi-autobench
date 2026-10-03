@@ -9,6 +9,10 @@ from typing import Any, cast
 from autobench import Benchmark, Case, FactorValue, FileRecorder, Variant, run_benchmark_spec
 
 from kedi_autobench.terminal_bench.models import HarborTrialResult, TrialLocation
+from kedi_autobench.terminal_bench.validation import (
+    validate_capture_result,
+    validate_harbor_record,
+)
 
 _CASE_COMPONENT = re.compile(r"[^A-Za-z0-9_.-]+")
 DEFAULT_MAX_EVIDENCE_FILE_BYTES = 20_000_000
@@ -98,11 +102,13 @@ async def record_harbor_job_async(
         path_root=job_dir,
         durability="synced",
     )
-    await run_benchmark_spec(
+    result = await run_benchmark_spec(
         benchmark.to_spec(),
         concurrency_limit=min(concurrency, len(cases)),
         recorder=recorder,
     )
+    validate_capture_result(result, locations=locations)
+    validate_harbor_record(output_dir, job_dir=job_dir)
     return output_dir
 
 
@@ -146,7 +152,7 @@ def _variant(
         factors=[
             FactorValue(name="model", value=manifest.get("model", "unknown")),
             FactorValue(name="adapter", value=manifest.get("adapter", "unknown")),
-            FactorValue(name="effort", value=manifest.get("effort")),
+            FactorValue(name="effort", value=manifest.get("effort") or "unknown"),
             FactorValue(
                 name="harness_policy",
                 value=json.dumps(policy, ensure_ascii=False, sort_keys=True),

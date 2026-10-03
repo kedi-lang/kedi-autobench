@@ -85,9 +85,9 @@ class KediTrialResult(BaseModel):
 class CapturedTrial(BaseModel):
     task_name: str
     trial_name: str
-    harbor_exception: str | None
-    rewards: dict[str, float | int]
-    kedi_state: str | None
+    harbor_exception: str | None = None
+    rewards: dict[str, float | int] = Field(default_factory=dict)
+    kedi_state: str | None = None
     usage: dict[str, Any]
     evidence_file_count: int
     evidence_bytes: int

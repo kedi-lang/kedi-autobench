@@ -24,6 +24,7 @@ from kedi_autobench.terminal_bench.models import (
     HarborTrialResult,
     KediTrialResult,
 )
+from kedi_autobench.terminal_bench.usage import trial_usage
 
 _TEXT_SUFFIXES = frozenset(
     {
@@ -76,7 +77,7 @@ def capture_trial(ctx: RunContext, case: Case) -> CapturedTrial:
         kind="workflow",
         input={"task_name": harbor.task_name, "trial_name": harbor.trial_name},
     ) as span:
-        usage = _usage(harbor, kedi)
+        usage = trial_usage(harbor, kedi)
         rewards = dict(harbor.verifier_result.rewards or {}) if harbor.verifier_result else {}
         _record_metrics(ctx, harbor, kedi, usage, rewards, span_id=span.id)
         evidence = _attach_evidence(
@@ -401,24 +402,6 @@ def _sanitize_json(value: Any, *, key: str | None = None) -> Any:
     return value
 
 
-def _usage(harbor: HarborTrialResult, kedi: KediTrialResult | None) -> dict[str, Any]:
-    usage = dict(kedi.usage) if kedi is not None else {}
-    agent = harbor.agent_result
-    if agent is not None:
-        for name, value in (
-            ("input_tokens", agent.n_input_tokens),
-            ("cache_read_tokens", agent.n_cache_tokens),
-            ("output_tokens", agent.n_output_tokens),
-            ("cost_usd", agent.cost_usd),
-        ):
-            if usage.get(name) is None:
-                usage[name] = value
-    input_tokens = _optional_int(usage.get("input_tokens")) or 0
-    output_tokens = _optional_int(usage.get("output_tokens")) or 0
-    usage.setdefault("total_tokens", input_tokens + output_tokens)
-    return usage
-
-
 def _optional_metric(
     ctx: RunContext,
     name: str,
@@ -460,10 +443,6 @@ def _positive_int(value: Any, *, name: str = "value") -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
         raise TypeError(f"{name} must be a positive integer")
     return value
-
-
-def _optional_int(value: Any) -> int | None:
-    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def _number(value: Any) -> float | None:

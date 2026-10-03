@@ -88,6 +88,14 @@ kedi-autobench-terminal-bench record \
   --record-dir ./records/kedi-pilot
 ```
 
+Validate the immutable record against the original Harbor result without rerunning anything:
+
+```bash
+kedi-autobench-terminal-bench validate \
+  --job-dir ./jobs/kedi-pilot \
+  --record-dir ./records/kedi-pilot
+```
+
 Run a Harbor command and capture its job afterward:
 
 ```bash
@@ -101,6 +109,13 @@ The wrapper waits for the Harbor process before reading its files. Capture error
 to the requested record directory as `<name>.capture-error.json`; they never replace Harbor's exit
 code. For automation where even post-run recording latency is undesirable, invoke `record` as a
 separate step after Harbor.
+
+Recording is strict: before returning, the importer validates the live Autobench result and
+replays the persisted record. Every planned trial must be present, replayable, free of capture-task
+errors, and equal to the Harbor source for trial identity, rewards, usage, and cost. A Harbor reward
+of zero or a recorded Harbor execution failure is a valid captured outcome; neither is a capture
+failure. Validation also checks run IDs against the recording plan and preserves the original
+Harbor exception type and Kedi completion state. `validate` applies the same contract offline.
 
 The record contains official rewards, phase durations, request/tool/token/cache/cost observations,
 Kedi completion state, and bounded copies of Harbor job, agent, verifier, and artifact evidence.
