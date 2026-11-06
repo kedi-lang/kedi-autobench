@@ -97,8 +97,8 @@ wheels = [
 
 [[package]]
 name = "autobench"
-version = "0.4.0"
-source = { git = "https://github.com/vcoderun/autobench.git?rev=456b02a7cae270d836bdc194caa22991c69d3670#456b02a7cae270d836bdc194caa22991c69d3670" }
+version = "0.5.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
     { name = "filelock" },
@@ -106,6 +106,10 @@ dependencies = [
     { name = "pydantic" },
     { name = "pyyaml" },
     { name = "rich" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ef/80/c1266f16580cb43bdd63347cdd76f7287d6fdfce3a42b82114f7f82c45f9/autobench-0.5.0.tar.gz", hash = "sha256:f6be9921f3a02993e767012c54bce8f61a3d65c613c498384f42ce61785ebd39", size = 748144, upload-time = "2026-11-06T15:57:56.886Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/76/3b/b9c7a7528d89b01ac5b5f009cbab891bcd88bdffeb1aba822b4178f15e82/autobench-0.5.0-py3-none-any.whl", hash = "sha256:81942ed7eeb2e7471b8b5d016eb756b8a6108c8342c373a65dbc3effedd76650", size = 347925, upload-time = "2026-11-06T15:57:47.46Z" },
 ]
 
 [[package]]
@@ -1102,7 +1106,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "autobench", git = "https://github.com/vcoderun/autobench.git?rev=456b02a7cae270d836bdc194caa22991c69d3670" },
+    { name = "autobench", specifier = ">=0.5,<0.6" },
     { name = "kedi", git = "https://github.com/kedi-lang/kedi.git?rev=f093bfaf62440871c8c5d2866dd7839dccf79582" },
     { name = "pydantic-ai", marker = "extra == 'pydantic-ai'", specifier = "==2.66.0" },
 ]
