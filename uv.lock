@@ -97,7 +97,7 @@ wheels = [
 
 [[package]]
 name = "autobench"
-version = "0.5.1"
+version = "0.5.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
@@ -107,9 +107,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "rich" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e1/22/f5e8eed7f4f6eae06070c10de6c3fd415b09444e97aeb0cf66b23253a2e1/autobench-0.5.1.tar.gz", hash = "sha256:73f2efc288fa236b6b4256736743d3fe7f25366f04b178aad2aac14e0557237a", size = 751472, upload-time = "2026-11-06T16:58:00.781Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0d/18/03b4b1ab349e632a339cc99ff228033ef943a4416a5d4667e2006199cf5c/autobench-0.5.2.tar.gz", hash = "sha256:f12f61a664e95c12d9519b5709702054ab4d0e5d93ddd5352bb51a97746128b1", size = 756282, upload-time = "2026-11-06T23:12:41.512Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/17/de/7b51f11ad94fe5457e5c9a7153484f3b7b43da39e1aa3bcda33fefd217fe/autobench-0.5.1-py3-none-any.whl", hash = "sha256:82bdbc29e5a3742bb56b5d3bb415c01bfaa1a95c307312b6a5d8a159fd801f65", size = 347926, upload-time = "2026-11-06T16:57:57.994Z" },
+    { url = "https://files.pythonhosted.org/packages/37/11/138d25b1216ff6ee2979c514627ad7ddcb2a1339eefd482e8d7338921a27/autobench-0.5.2-py3-none-any.whl", hash = "sha256:c38740c7a3289b9c4625ac0762e6b38ad206b82cadeb31237f3e87f84ce424a6", size = 348525, upload-time = "2026-11-06T23:12:38.913Z" },
 ]
 
 [[package]]
@@ -1106,7 +1106,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "autobench", specifier = ">=0.5.1,<0.6" },
+    { name = "autobench", specifier = ">=0.5.2,<0.6" },
     { name = "kedi", git = "https://github.com/kedi-lang/kedi.git?rev=f093bfaf62440871c8c5d2866dd7839dccf79582" },
     { name = "pydantic-ai", marker = "extra == 'pydantic-ai'", specifier = "==2.66.0" },
 ]

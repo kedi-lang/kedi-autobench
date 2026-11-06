@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "Apache-2.0"}
 dependencies = [
-    "autobench>=0.5.1,<0.6",
+    "autobench>=0.5.2,<0.6",
     "kedi>=0.4,<0.5",
 ]
 
