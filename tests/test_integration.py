@@ -34,6 +34,7 @@ from autobench import (
 from autobench.data.datasets import DatasetSpec
 from autobench.instrumentation.pydantic_ai import PydanticAI
 from autobench.runtime.instrumentation import reset_active_run_context, set_active_run_context
+from autobench.tracking import AssetRepresentation
 from kedi.agent_adapter import PydanticAdapter
 from kedi.agent_adapter.telemetry import record_conversation_assets
 from kedi.agent_profile import AgentProfile
@@ -50,6 +51,7 @@ from kedi.telemetry import (
     TelemetrySpan,
     add_counter,
     add_up_down_counter,
+    asset_fingerprint,
     current_span,
     get_backend,
     install_backend,
@@ -487,6 +489,74 @@ def test_behavioral_assets_deduplicate_and_version_without_leaking_content() -> 
     rendered = repr(recorded_template)
     assert "first secret prompt" not in rendered
     assert "second secret prompt" not in rendered
+
+
+def test_effective_assets_link_definitions_and_declared_parents() -> None:
+    context = run_context()
+    manager = InstrumentationManager()
+    handle = manager.install(Kedi(capture_content=True))
+    form_locator = "kedi:template:form:planner"
+    # Outside a run nothing is registered, so this version can never become a parent.
+    record_asset(
+        TelemetryAsset(
+            kind="template",
+            local_id="planner",
+            name="planner",
+            source_locator=form_locator,
+            content_fingerprint=asset_fingerprint("Plan."),
+        )
+    )
+    token = set_active_run_context(context)
+    try:
+        with context.span("asset owner"):
+            record_conversation_assets(
+                prompt="Plan the trip.",
+                instructions="Be brief.",
+                profile=AgentProfile(name="planner", model="test:model"),
+                tools=(),
+                output_schema=None,
+                call_kind="invoke",
+                source_path="workflow.kedi",
+                source_line=3,
+                source_snippet="Plan {{ trip }}.",
+            )
+            for content, parent in (
+                ("Plan.", None),
+                ("Plan then act.", None),
+                ("Plan, then verify.", "Plan."),
+                ("Act.", "unrecorded"),
+            ):
+                record_asset(
+                    TelemetryAsset(
+                        kind="template",
+                        local_id="planner",
+                        name="planner",
+                        source_locator=form_locator,
+                        content_fingerprint=asset_fingerprint(content),
+                        content=content,
+                        parent_fingerprint=None if parent is None else asset_fingerprint(parent),
+                    )
+                )
+    finally:
+        reset_active_run_context(token)
+        handle.close()
+        manager.close()
+
+    context.finalize()
+    uses = {use.source_locator: use for use in context.asset_uses}
+    template = uses["kedi:template:workflow.kedi:3:invoke"]
+    assert template.representation is AssetRepresentation.EFFECTIVE
+    assert template.definition_asset_id == uses["kedi:source:workflow.kedi:3"].asset_id
+    assert template.definition_version == uses["kedi:source:workflow.kedi:3"].version
+    instructions = uses["kedi:prompt:planner:instructions"]
+    assert instructions.representation is AssetRepresentation.EFFECTIVE
+    assert instructions.definition_asset_id == uses["kedi:profile:planner"].asset_id
+
+    forms = [version for version in context.asset_versions if version.asset_id == form_locator]
+    first, second, revised, unknown_parent = forms
+    assert second.parent_version == first.version
+    assert revised.parent_version == first.version
+    assert unknown_parent.parent_version == revised.version
 
 
 def test_span_facades_cover_noop_current_direct_and_composite_behavior() -> None:

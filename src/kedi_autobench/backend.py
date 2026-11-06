@@ -17,6 +17,7 @@ from autobench import (
 from autobench.tracking import (
     AssetCandidate,
     AssetProvenance,
+    AssetRepresentation,
     AssetSensitivity,
     canonical_asset_content,
 )
@@ -169,6 +170,8 @@ class AutobenchBackend:
         self._info = info
         self._target_version = target_version
         self._capture = capture
+        # Kedi names a parent by content fingerprint; Autobench lineage uses its own versions.
+        self._versions: dict[tuple[str, str], str] = {}
 
     @contextmanager
     def start_span(
@@ -289,7 +292,7 @@ class AutobenchBackend:
                 ),
             }
         )
-        self._runtime.asset(
+        registered = self._runtime.asset(
             self._info,
             AssetCandidate(
                 kind=asset.kind,
@@ -298,6 +301,13 @@ class AutobenchBackend:
                 source_locator=asset.source_locator,
                 canonical_content=canonical_content,
                 content_fingerprint=asset.content_fingerprint,
+                representation=AssetRepresentation(asset.representation),
+                definition_locator=asset.definition_locator,
+                parent_version=(
+                    None
+                    if asset.parent_fingerprint is None
+                    else self._versions.get((asset.source_locator, asset.parent_fingerprint))
+                ),
                 metadata={"descriptor": canonical_asset_content(dict(asset.metadata))},
                 provenance=AssetProvenance(
                     system="kedi",
@@ -309,6 +319,10 @@ class AutobenchBackend:
             ),
             span_id=None if current is None else current.id,
         )
+        if registered is not None:
+            self._versions[(asset.source_locator, asset.content_fingerprint)] = (
+                registered.version.version
+            )
 
     def _metric(
         self,
