@@ -11,7 +11,7 @@ requires-python = ">=3.11"
 license = {text = "Apache-2.0"}
 dependencies = [
     "autobench>=0.6,<0.7",
-    "kedi>=0.4,<0.5",
+    "kedi>=0.1.1,<0.2",
 ]
 
 [project.urls]
@@ -26,9 +26,6 @@ kedi-autobench-terminal-bench = "kedi_autobench.terminal_bench.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/kedi_autobench"]
-
-[tool.uv.sources]
-kedi = {git = "https://github.com/kedi-lang/kedi.git", rev = "fdc4870f4c66ec52b30dd3ff5c667401844abe4f"}
 
 [dependency-groups]
 dev = [

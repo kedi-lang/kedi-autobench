@@ -41,7 +41,7 @@ class Kedi:
             id="kedi.autobench",
             version=_VERSION,
             target_distribution="kedi",
-            supported_versions=">=0.4,<0.5",
+            supported_versions=">=0.1.1,<0.2",
             mechanism=CaptureMechanism.CALLBACK,
             layer=AbstractionLayer.FRAMEWORK,
             span_kinds=(

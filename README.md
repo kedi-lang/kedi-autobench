@@ -3,15 +3,14 @@
 Kedi-owned telemetry adapter for Autobench. It composes with the backend already installed in
 Kedi, emits Kedi lifecycle evidence into ABP, and conditionally restores the backend slot it owns.
 
-Requires Autobench `>=0.6,<0.7` and Kedi `>=0.4,<0.5`.
+Requires Autobench `>=0.6,<0.7` and Kedi `>=0.1.1,<0.2`.
 
 ```bash
 pip install kedi-autobench
 ```
 
-For repository development, `uv sync` resolves Kedi and Autobench from the exact Git revisions in
-`pyproject.toml`. This keeps a fresh checkout independent from the sibling-directory layout used
-while the integration was developed.
+For repository development, `uv sync` installs Kedi and Autobench from PyPI at the versions
+locked in `uv.lock`.
 
 ```python
 from autobench import Benchmark
