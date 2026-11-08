@@ -97,7 +97,7 @@ wheels = [
 
 [[package]]
 name = "autobench"
-version = "0.5.2"
+version = "0.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
@@ -107,9 +107,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "rich" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0d/18/03b4b1ab349e632a339cc99ff228033ef943a4416a5d4667e2006199cf5c/autobench-0.5.2.tar.gz", hash = "sha256:f12f61a664e95c12d9519b5709702054ab4d0e5d93ddd5352bb51a97746128b1", size = 756282, upload-time = "2026-11-06T23:12:41.512Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c1/5c/ed6cbb21cdfaa14d014f5d47a97a6cf4943d8656641cb7e7c1a6fd775bad/autobench-0.6.0.tar.gz", hash = "sha256:491c7cb4efc518ffd2ca3ee605a49a04a4068c0be9e7b4440fc3a159f7619f98", size = 761266, upload-time = "2026-11-07T15:47:05.252Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/37/11/138d25b1216ff6ee2979c514627ad7ddcb2a1339eefd482e8d7338921a27/autobench-0.5.2-py3-none-any.whl", hash = "sha256:c38740c7a3289b9c4625ac0762e6b38ad206b82cadeb31237f3e87f84ce424a6", size = 348525, upload-time = "2026-11-06T23:12:38.913Z" },
+    { url = "https://files.pythonhosted.org/packages/45/4e/93539fec92d42b7c9ac89d95b8be858d127db2be4274ceb37e69aaeb53f7/autobench-0.6.0-py3-none-any.whl", hash = "sha256:65e918a2594474fdd7b102e2ea34aaa499ffdd6016e4146fb0225c1fa457b71c", size = 349204, upload-time = "2026-11-07T15:47:02.434Z" },
 ]
 
 [[package]]
@@ -1059,7 +1059,7 @@ wheels = [
 [[package]]
 name = "kedi"
 version = "0.4.0"
-source = { git = "https://github.com/kedi-lang/kedi.git?rev=f093bfaf62440871c8c5d2866dd7839dccf79582#f093bfaf62440871c8c5d2866dd7839dccf79582" }
+source = { git = "https://github.com/kedi-lang/kedi.git?rev=fdc4870f4c66ec52b30dd3ff5c667401844abe4f#fdc4870f4c66ec52b30dd3ff5c667401844abe4f" }
 dependencies = [
     { name = "click" },
     { name = "docstring-parser" },
@@ -1106,8 +1106,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "autobench", specifier = ">=0.5.2,<0.6" },
-    { name = "kedi", git = "https://github.com/kedi-lang/kedi.git?rev=f093bfaf62440871c8c5d2866dd7839dccf79582" },
+    { name = "autobench", specifier = ">=0.6,<0.7" },
+    { name = "kedi", git = "https://github.com/kedi-lang/kedi.git?rev=fdc4870f4c66ec52b30dd3ff5c667401844abe4f" },
     { name = "pydantic-ai", marker = "extra == 'pydantic-ai'", specifier = "==2.66.0" },
 ]
 provides-extras = ["pydantic-ai"]
@@ -2642,8 +2642,8 @@ wheels = [
 
 [[package]]
 name = "tree-sitter-kedi"
-version = "0.4.4"
-source = { git = "https://github.com/kedi-lang/kedi.git?subdirectory=tree-sitter-kedi&rev=f093bfaf62440871c8c5d2866dd7839dccf79582#f093bfaf62440871c8c5d2866dd7839dccf79582" }
+version = "0.4.5"
+source = { git = "https://github.com/kedi-lang/kedi.git?subdirectory=tree-sitter-kedi&rev=fdc4870f4c66ec52b30dd3ff5c667401844abe4f#fdc4870f4c66ec52b30dd3ff5c667401844abe4f" }
 dependencies = [
     { name = "tree-sitter" },
 ]

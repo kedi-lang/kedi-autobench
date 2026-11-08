@@ -74,6 +74,7 @@ class Kedi:
                     "asset_discovery": True,
                     "asset_kinds": (
                         "agent_profile",
+                        "form",
                         "prompt",
                         "schema",
                         "skill",

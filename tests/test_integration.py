@@ -228,6 +228,7 @@ def test_instrumentor_contract_composes_restores_and_detects_install_race(
     assert instrumentor.info.capabilities.asset_discovery is True
     assert set(instrumentor.info.capabilities.asset_kinds) == {
         "agent_profile",
+        "form",
         "prompt",
         "schema",
         "skill",
@@ -491,21 +492,10 @@ def test_behavioral_assets_deduplicate_and_version_without_leaking_content() -> 
     assert "second secret prompt" not in rendered
 
 
-def test_effective_assets_link_definitions_and_declared_parents() -> None:
+def test_effective_assets_link_definitions() -> None:
     context = run_context()
     manager = InstrumentationManager()
     handle = manager.install(Kedi(capture_content=True))
-    form_locator = "kedi:template:form:planner"
-    # Outside a run nothing is registered, so this version can never become a parent.
-    record_asset(
-        TelemetryAsset(
-            kind="template",
-            local_id="planner",
-            name="planner",
-            source_locator=form_locator,
-            content_fingerprint=asset_fingerprint("Plan."),
-        )
-    )
     token = set_active_run_context(context)
     try:
         with context.span("asset owner"):
@@ -520,23 +510,6 @@ def test_effective_assets_link_definitions_and_declared_parents() -> None:
                 source_line=3,
                 source_snippet="Plan {{ trip }}.",
             )
-            for content, parent in (
-                ("Plan.", None),
-                ("Plan then act.", None),
-                ("Plan, then verify.", "Plan."),
-                ("Act.", "unrecorded"),
-            ):
-                record_asset(
-                    TelemetryAsset(
-                        kind="template",
-                        local_id="planner",
-                        name="planner",
-                        source_locator=form_locator,
-                        content_fingerprint=asset_fingerprint(content),
-                        content=content,
-                        parent_fingerprint=None if parent is None else asset_fingerprint(parent),
-                    )
-                )
     finally:
         reset_active_run_context(token)
         handle.close()
@@ -552,11 +525,66 @@ def test_effective_assets_link_definitions_and_declared_parents() -> None:
     assert instructions.representation is AssetRepresentation.EFFECTIVE
     assert instructions.definition_asset_id == uses["kedi:profile:planner"].asset_id
 
-    forms = [version for version in context.asset_versions if version.asset_id == form_locator]
-    first, second, revised, unknown_parent = forms
-    assert second.parent_version == first.version
+
+def _form(content: str, parent: str | None, *, captured: bool, **metadata: str) -> TelemetryAsset:
+    # Kedi sends a form's text only when content capture is enabled.
+    return TelemetryAsset(
+        kind="form",
+        local_id="planner",
+        name="planner",
+        source_locator="kedi:group:main:planner",
+        content_fingerprint=asset_fingerprint(content),
+        content=content if captured else None,
+        metadata={"group": "planner", "group_kind": "evolve", "module": "main", **metadata},
+        parent_fingerprint=None if parent is None else asset_fingerprint(parent),
+    )
+
+
+@pytest.mark.parametrize("capture_content", [True, False])
+def test_forms_declare_their_parents_by_fingerprint(capture_content: bool) -> None:
+    context = run_context()
+    manager = InstrumentationManager()
+    handle = manager.install(Kedi(capture_content=capture_content))
+    token = set_active_run_context(context)
+    try:
+        with context.span("asset owner"):
+            for content, parent, metadata in (
+                ("Plan.", None, {"producer": "source"}),
+                ("Plan then act.", None, {"producer": "supplied"}),
+                ("Plan, then verify.", "Plan.", {"producer": "supplied", "note": "verify"}),
+                ("Plan, then verify.", "Plan.", {"producer": "runtime", "note": "again"}),
+                ("Act.", "unrecorded", {}),
+            ):
+                record_asset(_form(content, parent, captured=capture_content, **metadata))
+    finally:
+        reset_active_run_context(token)
+        handle.close()
+        manager.close()
+
+    trace = context.finalize()
+    versions = [v for v in context.asset_versions if v.asset_id == "kedi:group:main:planner"]
+    first, unrelated, revised, unknown_parent = versions
+    # Undeclared parents are roots, not children of whichever version came before.
+    assert first.parent_version is None
+    assert unrelated.parent_version is None
     assert revised.parent_version == first.version
-    assert unknown_parent.parent_version == revised.version
+    # A parent from another record has a version this record never saw.
+    assert unknown_parent.parent_version not in {version.version for version in versions}
+    [owner] = [record for record in trace.spans if record.operation == "asset owner"]
+    forms = [
+        event.body
+        for event in owner.events
+        if event.name == "kedi.form" and isinstance(event.body, dict)
+    ]
+    assert [form["kedi.form.producer"] for form in forms] == [
+        "source",
+        "supplied",
+        "supplied",
+        "runtime",
+        "source",
+    ]
+    notes = [form.get("kedi.form.note") for form in forms]
+    assert notes == ([None, None, "verify", "again", None] if capture_content else [None] * 5)
 
 
 def test_span_facades_cover_noop_current_direct_and_composite_behavior() -> None:

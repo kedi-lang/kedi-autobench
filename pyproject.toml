@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "Apache-2.0"}
 dependencies = [
-    "autobench>=0.5.2,<0.6",
+    "autobench>=0.6,<0.7",
     "kedi>=0.4,<0.5",
 ]
 
@@ -28,7 +28,7 @@ kedi-autobench-terminal-bench = "kedi_autobench.terminal_bench.cli:main"
 packages = ["src/kedi_autobench"]
 
 [tool.uv.sources]
-kedi = {git = "https://github.com/kedi-lang/kedi.git", rev = "f093bfaf62440871c8c5d2866dd7839dccf79582"}
+kedi = {git = "https://github.com/kedi-lang/kedi.git", rev = "fdc4870f4c66ec52b30dd3ff5c667401844abe4f"}
 
 [dependency-groups]
 dev = [

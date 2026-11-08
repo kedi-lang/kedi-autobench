@@ -20,6 +20,7 @@ from autobench.tracking import (
     AssetRepresentation,
     AssetSensitivity,
     canonical_asset_content,
+    canonical_asset_hash,
 )
 from kedi.telemetry import (
     AssetBackend,
@@ -33,7 +34,7 @@ from kedi.telemetry import (
     TelemetryScope,
     TelemetrySpan,
 )
-from pydantic import ConfigDict, TypeAdapter, ValidationError
+from pydantic import ConfigDict, JsonValue, TypeAdapter, ValidationError
 
 MetricKind = Literal["counter", "up_down_counter", "histogram"]
 
@@ -54,6 +55,20 @@ _ATTRIBUTE_VALUE: TypeAdapter[AttributeValue] = TypeAdapter(
     AttributeValue,
     config=ConfigDict(strict=True),
 )
+
+
+_FORM_PROVENANCE = ("producer", "note")
+
+
+def _omitted(fingerprint: str) -> dict[str, JsonValue]:
+    return {"omitted": True, "sha256": fingerprint}
+
+
+def _form_parent(asset: TelemetryAsset) -> str | None:
+    """The parent's fingerprint as Autobench computes it for the content this form records."""
+    if asset.parent_fingerprint is None or asset.content is not None:
+        return asset.parent_fingerprint
+    return canonical_asset_hash(_omitted(asset.parent_fingerprint))
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,8 +185,6 @@ class AutobenchBackend:
         self._info = info
         self._target_version = target_version
         self._capture = capture
-        # Kedi names a parent by content fingerprint; Autobench lineage uses its own versions.
-        self._versions: dict[tuple[str, str], str] = {}
 
     @contextmanager
     def start_span(
@@ -282,17 +295,24 @@ class AutobenchBackend:
             "sensitive": AssetSensitivity.SENSITIVE,
         }[asset.sensitivity]
         current = self._runtime.current_span(self._info)
-        canonical_content = canonical_asset_content(
-            {
-                "metadata": dict(asset.metadata),
-                "content": (
-                    asset.content
-                    if asset.content is not None
-                    else {"omitted": True, "sha256": asset.content_fingerprint}
-                ),
-            }
+        form = asset.kind == "form"
+        content = (
+            asset.content if asset.content is not None else _omitted(asset.content_fingerprint)
         )
-        registered = self._runtime.asset(
+        descriptor = dict(asset.metadata)
+        if form:
+            # A form is its text: Autobench's fingerprint of it equals Kedi's, so a parent named by
+            # fingerprint resolves to the same version in any record. Who produced it and why are
+            # evidence about this use, not part of its definition.
+            for key in _FORM_PROVENANCE:
+                descriptor.pop(key, None)
+            canonical_content = canonical_asset_content(content)
+            self._record_form_use(asset, current)
+        else:
+            canonical_content = canonical_asset_content(
+                {"metadata": dict(asset.metadata), "content": content}
+            )
+        self._runtime.asset(
             self._info,
             AssetCandidate(
                 kind=asset.kind,
@@ -303,12 +323,9 @@ class AutobenchBackend:
                 content_fingerprint=asset.content_fingerprint,
                 representation=AssetRepresentation(asset.representation),
                 definition_locator=asset.definition_locator,
-                parent_version=(
-                    None
-                    if asset.parent_fingerprint is None
-                    else self._versions.get((asset.source_locator, asset.parent_fingerprint))
-                ),
-                metadata={"descriptor": canonical_asset_content(dict(asset.metadata))},
+                parent_fingerprint=_form_parent(asset) if form else None,
+                root=form and asset.parent_fingerprint is None,
+                metadata={"descriptor": canonical_asset_content(descriptor)},
                 provenance=AssetProvenance(
                     system="kedi",
                     key=asset.kind,
@@ -319,10 +336,17 @@ class AutobenchBackend:
             ),
             span_id=None if current is None else current.id,
         )
-        if registered is not None:
-            self._versions[(asset.source_locator, asset.content_fingerprint)] = (
-                registered.version.version
-            )
+
+    def _record_form_use(self, asset: TelemetryAsset, current: CurrentSpan | None) -> None:
+        attributes: dict[str, AttributeValue] = {
+            "kedi.form.group": asset.source_locator,
+            "kedi.form.fingerprint": asset.content_fingerprint,
+            "kedi.form.producer": str(asset.metadata.get("producer", "source")),
+        }
+        note = asset.metadata.get("note")
+        if note is not None and asset.content is not None:
+            attributes["kedi.form.note"] = str(note)
+        AutobenchSpan(current).add_event("kedi.form", attributes)
 
     def _metric(
         self,

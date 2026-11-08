@@ -3,7 +3,7 @@
 Kedi-owned telemetry adapter for Autobench. It composes with the backend already installed in
 Kedi, emits Kedi lifecycle evidence into ABP, and conditionally restores the backend slot it owns.
 
-Requires Autobench `>=0.3,<0.4` and Kedi `>=0.4,<0.5`.
+Requires Autobench `>=0.6,<0.7` and Kedi `>=0.4,<0.5`.
 
 ```bash
 pip install kedi-autobench
@@ -61,6 +61,44 @@ benchmark = (
 templates and schemas create new versions without exposing their raw values. Source paths and
 snippets have independent flags. Full prompt, schema, and skill text is carried as asset candidate
 content, never placed in generic span attributes.
+
+## Forms
+
+Kedi records the active body of every `> evolve:` group as a `form` asset whose identity is the
+group, `kedi:group:<module>:<qualified name>`, and whose version is its comment-free text. A form
+that names its parent by fingerprint is recorded as that version's child, also when the parent
+ran in an earlier record, so records of successive generations pool into one lineage. A form
+without a declared parent is a root. Who produced a form and the producer's note are recorded as
+a `kedi.form` event on the active span, not as part of the form's definition; the note is kept
+only when content capture is enabled.
+
+A variant selects forms with `kedi.form.<group>` factors. A factor's value is the form's Kedi text,
+or an object with `text` and the optional `parent` and `note`:
+
+```python
+from autobench import FactorValue, Variant
+from kedi.lang import compile_program, parse_program
+from kedi_autobench import variant_forms
+
+variant = Variant(
+    id="planner-v2",
+    factors=[
+        FactorValue(
+            name="kedi.form.solve.planner",
+            value={"text": "[plan] << Plan <problem> in steps.", "parent": "3fa2c1..."},
+        )
+    ],
+)
+
+async def run_case(target: str, *, ctx, case):
+    runtime = compile_program(parse_program(SOURCE), forms=variant_forms(ctx.variant))
+    return runtime.run_main()
+```
+
+Each form passes Kedi's form gate before the program runs. Compare a lineage with
+`build_asset_trajectory(records, asset_id="kedi:group:main:solve.planner")`, or the first and the
+last generation with a comparison whose `asset` is the group and whose `baseline` and `candidate`
+are `root` and `leaf`.
 
 ## Backend ownership
 
