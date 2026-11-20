@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tomllib
+from importlib.metadata import version
 from pathlib import Path
 
 import kedi
@@ -25,3 +26,9 @@ def test_supported_kedi_range_is_the_package_dependency() -> None:
     assert supported is not None
     assert SpecifierSet(supported) == dependency.specifier
     assert Version(kedi.__version__) in dependency.specifier
+
+
+def test_instrumentor_version_matches_package() -> None:
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    assert Kedi().info.version == project["version"]
+    assert Kedi().info.version == version("kedi-autobench")
