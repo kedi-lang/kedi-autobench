@@ -785,6 +785,29 @@ def test_record_harbor_job_redacts_secret_keys_in_jsonl_evidence(tmp_path: Path)
     assert b"[REDACTED]" in payload
 
 
+def test_record_harbor_job_gives_colliding_artifact_paths_distinct_names(
+    tmp_path: Path,
+) -> None:
+    job = _job(tmp_path)
+    trial = next(path.parent for path in job.glob("*/result.json"))
+    (trial / "agent" / "a").mkdir(exist_ok=True)
+    (trial / "agent" / "a" / "b.txt").write_text("nested", encoding="utf-8")
+    (trial / "agent" / "a.b.txt").write_text("dotted", encoding="utf-8")
+    output = tmp_path / "record"
+
+    record_harbor_job(job, output)
+
+    run = replay_experiment(output).runs[0]
+    by_path = {
+        artifact.tags["harbor.path"]: artifact.name
+        for artifact in run.task_result.artifacts
+        if artifact.name.startswith("terminal_bench.file.")
+    }
+    assert by_path["trial/agent/a/b.txt"] != by_path["trial/agent/a.b.txt"]
+    assert len(set(by_path.values())) == len(by_path)
+    assert run.task_result.output["evidence_file_count"] >= 2
+
+
 def test_capture_helper_boundaries(tmp_path: Path) -> None:
     assert importlib.import_module("kedi_autobench.terminal_bench.__main__") is not None
     assert _load_json_if_present(tmp_path / "missing.json") == {}

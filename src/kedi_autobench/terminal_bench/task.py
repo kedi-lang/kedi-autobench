@@ -257,6 +257,7 @@ def _attach_evidence(
     candidates = _evidence_candidates(job_dir, trial_dir)
     evidence: list[EvidenceFile] = []
     attached_bytes = 0
+    used_names: set[str] = set()
     with tempfile.TemporaryDirectory(prefix="kedi-autobench-redacted-") as raw_temp:
         temp = Path(raw_temp)
         for source, relative in candidates:
@@ -303,8 +304,15 @@ def _attach_evidence(
                 )
                 continue
             media_type = mimetypes.guess_type(source.name)[0] or "application/octet-stream"
+            name = "terminal_bench.file." + relative.replace("/", ".")
+            if name in used_names:
+                # "a/b.txt" and "a.b.txt" map to the same dotted name; keep the
+                # first plain and disambiguate the rest by their source path.
+                digest = hashlib.sha256(relative.encode("utf-8")).hexdigest()[:12]
+                name = f"{name}-{digest}"
+            used_names.add(name)
             ctx.artifact_file(
-                "terminal_bench.file." + relative.replace("/", "."),
+                name,
                 prepared,
                 media_type=media_type,
                 max_bytes=max_file_bytes,
