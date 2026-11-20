@@ -17,9 +17,13 @@ def trial_usage(harbor: HarborTrialResult, kedi: KediTrialResult | None) -> dict
         ):
             if usage.get(name) is None:
                 usage[name] = value
-    input_tokens = _optional_int(usage.get("input_tokens")) or 0
-    output_tokens = _optional_int(usage.get("output_tokens")) or 0
-    usage.setdefault("total_tokens", input_tokens + output_tokens)
+    input_tokens = _optional_int(usage.get("input_tokens"))
+    output_tokens = _optional_int(usage.get("output_tokens"))
+    if _optional_int(usage.get("total_tokens")) is None:
+        if input_tokens is not None or output_tokens is not None:
+            usage["total_tokens"] = (input_tokens or 0) + (output_tokens or 0)
+        else:
+            usage["total_tokens"] = None
     return usage
 
 

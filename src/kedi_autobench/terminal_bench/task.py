@@ -148,9 +148,7 @@ def _record_metrics(
             role=ObservationRole.OBJECTIVE,
             span_id=span_id,
         )
-    grader_completed = (
-        harbor.verifier_result is not None and harbor.verifier_result.rewards is not None
-    )
+    grader_completed = harbor.verifier_result is not None and bool(harbor.verifier_result.rewards)
     ctx.check(
         "terminal_bench.grader_completed",
         grader_completed,
@@ -257,6 +255,7 @@ def _attach_evidence(
     candidates = _evidence_candidates(job_dir, trial_dir)
     evidence: list[EvidenceFile] = []
     attached_bytes = 0
+    used_names: set[str] = set()
     with tempfile.TemporaryDirectory(prefix="kedi-autobench-redacted-") as raw_temp:
         temp = Path(raw_temp)
         for source, relative in candidates:
@@ -303,8 +302,15 @@ def _attach_evidence(
                 )
                 continue
             media_type = mimetypes.guess_type(source.name)[0] or "application/octet-stream"
+            name = "terminal_bench.file." + relative.replace("/", ".")
+            if name in used_names:
+                # "a/b.txt" and "a.b.txt" map to the same dotted name; keep the
+                # first plain and disambiguate the rest by their source path.
+                digest = hashlib.sha256(relative.encode("utf-8")).hexdigest()[:12]
+                name = f"{name}-{digest}"
+            used_names.add(name)
             ctx.artifact_file(
-                "terminal_bench.file." + relative.replace("/", "."),
+                name,
                 prepared,
                 media_type=media_type,
                 max_bytes=max_file_bytes,
@@ -360,7 +366,8 @@ def _sanitized_copy(source: Path, *, relative: str, root: Path) -> Path:
         target.write_bytes(payload)
         return target
     text = payload.decode("utf-8", errors="replace")
-    if source.suffix.lower() == ".json":
+    suffix = source.suffix.lower()
+    if suffix == ".json":
         try:
             value = json.loads(text)
         except json.JSONDecodeError:
@@ -375,8 +382,28 @@ def _sanitized_copy(source: Path, *, relative: str, root: Path) -> Path:
                 )
                 + "\n"
             )
+    elif suffix == ".jsonl":
+        text = _sanitize_jsonl(text)
     target.write_text(redact_text(text), encoding="utf-8")
     return target
+
+
+def _sanitize_jsonl(text: str) -> str:
+    lines: list[str] = []
+    for line in text.splitlines():
+        if not line.strip():
+            lines.append(line)
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            lines.append(redact_text(line))
+        else:
+            lines.append(json.dumps(_sanitize_json(value), ensure_ascii=False, sort_keys=True))
+    result = "\n".join(lines)
+    if text.endswith("\n"):
+        result += "\n"
+    return result
 
 
 def _looks_like_text(payload: bytes) -> bool:

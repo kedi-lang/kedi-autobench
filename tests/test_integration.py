@@ -419,6 +419,43 @@ def test_backend_maps_spans_metrics_assets_events_and_errors() -> None:
     } <= {metric.name for metric in existing.metrics}
 
 
+def test_backend_maps_each_token_type_to_its_semantic_type() -> None:
+    existing = RecordingBackend()
+    install_backend(existing)
+    context = run_context()
+    manager = InstrumentationManager()
+    handle = manager.install(Kedi())
+    token = set_active_run_context(context)
+    try:
+        with runtime_span("kedi token fixture", "run_program"):
+            for token_type in ("input", "cache_read", "cache_write", "output", "unknown"):
+                record_histogram(
+                    "agent",
+                    "gen_ai.client.token.usage",
+                    5,
+                    unit="token",
+                    attributes={"gen_ai.token.type": token_type},
+                )
+    finally:
+        reset_active_run_context(token)
+        handle.close()
+        manager.close()
+
+    context.finalize()
+    observed = {
+        observation.tags["gen_ai.token.type"]: observation.semantic_type
+        for observation in context.observations
+        if observation.name == "gen_ai.client.token.usage"
+    }
+    assert observed == {
+        "input": Semantic.LLM_TOKENS_INPUT,
+        "cache_read": Semantic.LLM_TOKENS_CACHED_INPUT,
+        "cache_write": Semantic.LLM_TOKENS_CACHE_WRITE,
+        "output": Semantic.LLM_TOKENS_OUTPUT,
+        "unknown": "gen_ai.client.token.usage",
+    }
+
+
 def test_asset_delivery_does_not_require_the_previous_backend_to_support_assets() -> None:
     context = run_context()
     manager = InstrumentationManager()

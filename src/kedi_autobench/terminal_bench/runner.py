@@ -29,6 +29,7 @@ def run_then_record(
 ) -> int:
     if not command:
         raise ValueError("Harbor command must not be empty")
+    output_dir = output_dir.expanduser().resolve()
     completed = subprocess.run(tuple(command), check=False)
     if job_dir.is_dir():
         try:

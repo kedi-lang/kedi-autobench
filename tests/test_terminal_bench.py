@@ -22,7 +22,12 @@ from kedi_autobench.terminal_bench.capture import (
     record_harbor_job,
 )
 from kedi_autobench.terminal_bench.cli import main
-from kedi_autobench.terminal_bench.models import AgentContext, HarborTrialResult, TimingInfo
+from kedi_autobench.terminal_bench.models import (
+    AgentContext,
+    HarborTrialResult,
+    KediTrialResult,
+    TimingInfo,
+)
 from kedi_autobench.terminal_bench.runner import run_then_record
 from kedi_autobench.terminal_bench.task import (
     _case_input,
@@ -465,6 +470,99 @@ def test_record_harbor_job_rejects_invalid_bounds(tmp_path: Path) -> None:
         record_harbor_job(job, tmp_path / "record-b", concurrency=0)
 
 
+def test_run_then_record_expands_tilde_and_dot_record_dir(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job = _job(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    def fake_run(*_args: Any, **_kwargs: Any) -> SimpleNamespace:
+        return SimpleNamespace(returncode=7)
+
+    def broken_recorder(*_args: Any, **_kwargs: Any) -> Path:
+        raise RuntimeError("capture failed")
+
+    monkeypatch.setattr("kedi_autobench.terminal_bench.runner.subprocess.run", fake_run)
+
+    assert (
+        run_then_record(
+            ["harbor", "run"],
+            job_dir=job,
+            output_dir=Path("."),
+            recorder=broken_recorder,
+        )
+        == 7
+    )
+    assert (tmp_path.parent / f"{tmp_path.name}.capture-error.json").is_file()
+
+    assert (
+        run_then_record(
+            ["harbor", "run"],
+            job_dir=job,
+            output_dir=Path("~/x"),
+            recorder=broken_recorder,
+        )
+        == 7
+    )
+    assert (tmp_path / "x.capture-error.json").is_file()
+    assert not (tmp_path / "~").exists()
+
+
+def test_run_then_record_passes_resolved_record_dir_to_recorder(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job = _job(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    seen: list[Path] = []
+
+    def fake_run(*_args: Any, **_kwargs: Any) -> SimpleNamespace:
+        return SimpleNamespace(returncode=0)
+
+    def recorder(*args: Any, **_kwargs: Any) -> Path:
+        seen.append(args[1])
+        return args[1]
+
+    monkeypatch.setattr("kedi_autobench.terminal_bench.runner.subprocess.run", fake_run)
+    assert (
+        run_then_record(
+            ["harbor", "run"],
+            job_dir=job,
+            output_dir=Path("~/x"),
+            recorder=recorder,
+        )
+        == 0
+    )
+    assert seen == [tmp_path / "x"]
+
+
+def test_cli_run_accepts_dot_record_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    job = _job(tmp_path)
+    work = tmp_path / "work"
+    work.mkdir()
+    monkeypatch.chdir(work)
+
+    assert (
+        main(
+            [
+                "run",
+                "--job-dir",
+                str(job),
+                "--record-dir",
+                ".",
+                sys.executable,
+                "-c",
+                "raise SystemExit(3)",
+            ]
+        )
+        == 3
+    )
+    assert (work / "experiment.yaml").is_file()
+
+
 def test_run_then_record_is_post_run_and_fail_open(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -607,6 +705,132 @@ def test_cli_run_accepts_command_without_separator(tmp_path: Path) -> None:
     assert len(replay_experiment(output).runs) == 1
 
 
+def test_trial_usage_fills_none_total_only_when_tokens_known() -> None:
+    harbor = HarborTrialResult(task_name="task", trial_name="trial")
+
+    filled = KediTrialResult(
+        state="completed",
+        usage={"total_tokens": None, "input_tokens": 5, "output_tokens": 3},
+    )
+    assert trial_usage(harbor, filled)["total_tokens"] == 8
+
+    input_only = KediTrialResult(state="completed", usage={"input_tokens": 5})
+    assert trial_usage(harbor, input_only)["total_tokens"] == 5
+
+    nothing_known = KediTrialResult(state="completed", usage={"total_tokens": None})
+    assert trial_usage(harbor, nothing_known)["total_tokens"] is None
+
+    known_total = KediTrialResult(
+        state="completed",
+        usage={"total_tokens": 12, "input_tokens": 5, "output_tokens": 3},
+    )
+    assert trial_usage(harbor, known_total)["total_tokens"] == 12
+
+
+def test_sanitized_copy_redacts_secret_keys_in_jsonl(tmp_path: Path) -> None:
+    source = tmp_path / "events.jsonl"
+    source.write_text(
+        '{"password": "hunter2-plain-value", "api_key": "AKIA1234567890",'
+        ' "token": "tok-abcdef", "user": "alice"}\n'
+        '{"nested": {"password": "nested-secret"}, "items": [1, "plain"]}\n'
+        "\n"
+        "not json at all sk-plaintextsecret123456\n",
+        encoding="utf-8",
+    )
+    prepared = _sanitized_copy(source, relative="events.jsonl", root=tmp_path / "copy")
+    text = prepared.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    assert json.loads(lines[0]) == {
+        "api_key": "[REDACTED]",
+        "password": "[REDACTED]",
+        "token": "[REDACTED]",
+        "user": "alice",
+    }
+    second = json.loads(lines[1])
+    assert second["nested"]["password"] == "[REDACTED]"
+    assert second["items"] == [1, "plain"]
+    assert lines[2] == ""
+    assert "sk-plaintextsecret123456" not in lines[3]
+    assert "hunter2-plain-value" not in text
+    assert "nested-secret" not in text
+    assert text.endswith("\n")
+
+    no_trailing = tmp_path / "single.jsonl"
+    no_trailing.write_text('{"password": "x"}', encoding="utf-8")
+    prepared_single = _sanitized_copy(
+        no_trailing, relative="single.jsonl", root=tmp_path / "copy-single"
+    )
+    assert json.loads(prepared_single.read_text(encoding="utf-8")) == {"password": "[REDACTED]"}
+    assert not prepared_single.read_text(encoding="utf-8").endswith("\n")
+
+
+def test_record_harbor_job_redacts_secret_keys_in_jsonl_evidence(tmp_path: Path) -> None:
+    job = _job(tmp_path)
+    trial = next(path.parent for path in job.glob("*/result.json"))
+    (trial / "agent" / "events.jsonl").write_text(
+        '{"password": "hunter2-plain-value", "api_key": "AKIA1234567890"}\n',
+        encoding="utf-8",
+    )
+    output = tmp_path / "record"
+
+    record_harbor_job(job, output)
+
+    payload = b"\n".join(
+        path.read_bytes()
+        for path in output.rglob("*")
+        if path.is_file() and path.stat().st_size < 2_000_000
+    )
+    assert b"hunter2-plain-value" not in payload
+    assert b"AKIA1234567890" not in payload
+    assert b"[REDACTED]" in payload
+
+
+def test_record_harbor_job_gives_colliding_artifact_paths_distinct_names(
+    tmp_path: Path,
+) -> None:
+    job = _job(tmp_path)
+    trial = next(path.parent for path in job.glob("*/result.json"))
+    (trial / "agent" / "a").mkdir(exist_ok=True)
+    (trial / "agent" / "a" / "b.txt").write_text("nested", encoding="utf-8")
+    (trial / "agent" / "a.b.txt").write_text("dotted", encoding="utf-8")
+    output = tmp_path / "record"
+
+    record_harbor_job(job, output)
+
+    run = replay_experiment(output).runs[0]
+    by_path = {
+        artifact.tags["harbor.path"]: artifact.name
+        for artifact in run.task_result.artifacts
+        if artifact.name.startswith("terminal_bench.file.")
+    }
+    assert by_path["trial/agent/a/b.txt"] != by_path["trial/agent/a.b.txt"]
+    assert len(set(by_path.values())) == len(by_path)
+    assert run.task_result.output["evidence_file_count"] >= 2
+
+
+def test_grader_completed_is_false_for_empty_rewards(tmp_path: Path) -> None:
+    job = _job(tmp_path)
+    trial = next(path.parent for path in job.glob("*/result.json"))
+    result_path = trial / "result.json"
+    result = json.loads(result_path.read_text())
+    result["verifier_result"] = {"rewards": {}}
+    _write_json(result_path, result)
+
+    record_harbor_job(job, tmp_path / "record-empty")
+
+    run = replay_experiment(tmp_path / "record-empty").runs[0]
+    assert _observations(run)["terminal_bench.grader_completed"] is False
+
+    # A zero reward still counts: the grader ran, it just scored zero.
+    result["verifier_result"] = {"rewards": {"reward": 0}}
+    _write_json(result_path, result)
+
+    record_harbor_job(job, tmp_path / "record-zero")
+
+    second = replay_experiment(tmp_path / "record-zero").runs[0]
+    assert _observations(second)["terminal_bench.grader_completed"] is True
+
+
 def test_capture_helper_boundaries(tmp_path: Path) -> None:
     assert importlib.import_module("kedi_autobench.terminal_bench.__main__") is not None
     assert _load_json_if_present(tmp_path / "missing.json") == {}
@@ -646,7 +870,7 @@ def test_capture_helper_boundaries(tmp_path: Path) -> None:
     }
 
     no_usage = HarborTrialResult(task_name="task", trial_name="trial")
-    assert trial_usage(no_usage, None) == {"total_tokens": 0}
+    assert trial_usage(no_usage, None) == {"total_tokens": None}
     partial_usage = HarborTrialResult(
         task_name="task",
         trial_name="trial",
