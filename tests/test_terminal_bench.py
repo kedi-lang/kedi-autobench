@@ -808,6 +808,29 @@ def test_record_harbor_job_gives_colliding_artifact_paths_distinct_names(
     assert run.task_result.output["evidence_file_count"] >= 2
 
 
+def test_grader_completed_is_false_for_empty_rewards(tmp_path: Path) -> None:
+    job = _job(tmp_path)
+    trial = next(path.parent for path in job.glob("*/result.json"))
+    result_path = trial / "result.json"
+    result = json.loads(result_path.read_text())
+    result["verifier_result"] = {"rewards": {}}
+    _write_json(result_path, result)
+
+    record_harbor_job(job, tmp_path / "record-empty")
+
+    run = replay_experiment(tmp_path / "record-empty").runs[0]
+    assert _observations(run)["terminal_bench.grader_completed"] is False
+
+    # A zero reward still counts: the grader ran, it just scored zero.
+    result["verifier_result"] = {"rewards": {"reward": 0}}
+    _write_json(result_path, result)
+
+    record_harbor_job(job, tmp_path / "record-zero")
+
+    second = replay_experiment(tmp_path / "record-zero").runs[0]
+    assert _observations(second)["terminal_bench.grader_completed"] is True
+
+
 def test_capture_helper_boundaries(tmp_path: Path) -> None:
     assert importlib.import_module("kedi_autobench.terminal_bench.__main__") is not None
     assert _load_json_if_present(tmp_path / "missing.json") == {}

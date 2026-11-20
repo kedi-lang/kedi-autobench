@@ -148,9 +148,7 @@ def _record_metrics(
             role=ObservationRole.OBJECTIVE,
             span_id=span_id,
         )
-    grader_completed = (
-        harbor.verifier_result is not None and harbor.verifier_result.rewards is not None
-    )
+    grader_completed = harbor.verifier_result is not None and bool(harbor.verifier_result.rewards)
     ctx.check(
         "terminal_bench.grader_completed",
         grader_completed,
