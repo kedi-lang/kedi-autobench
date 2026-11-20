@@ -366,11 +366,15 @@ class AutobenchBackend:
             semantic_type = Semantic.TIME_LATENCY
             direction = Direction.MINIMIZE
         elif name == "gen_ai.client.token.usage":
-            semantic_type = (
-                Semantic.LLM_TOKENS_INPUT
-                if tags.get("gen_ai.token.type") == "input"
-                else Semantic.LLM_TOKENS_OUTPUT
-            )
+            token_type = tags.get("gen_ai.token.type")
+            if token_type == "input":
+                semantic_type = Semantic.LLM_TOKENS_INPUT
+            elif token_type == "cache_read":
+                semantic_type = Semantic.LLM_TOKENS_CACHED_INPUT
+            elif token_type == "cache_write":
+                semantic_type = Semantic.LLM_TOKENS_CACHE_WRITE
+            elif token_type == "output":
+                semantic_type = Semantic.LLM_TOKENS_OUTPUT
         elif name == "kedi.tool.calls":
             semantic_type = Semantic.TOOL_CALL_COUNT
         elif name == "kedi.approval.requests":
