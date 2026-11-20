@@ -22,7 +22,12 @@ from kedi_autobench.terminal_bench.capture import (
     record_harbor_job,
 )
 from kedi_autobench.terminal_bench.cli import main
-from kedi_autobench.terminal_bench.models import AgentContext, HarborTrialResult, TimingInfo
+from kedi_autobench.terminal_bench.models import (
+    AgentContext,
+    HarborTrialResult,
+    KediTrialResult,
+    TimingInfo,
+)
 from kedi_autobench.terminal_bench.runner import run_then_record
 from kedi_autobench.terminal_bench.task import (
     _case_input,
@@ -607,6 +612,28 @@ def test_cli_run_accepts_command_without_separator(tmp_path: Path) -> None:
     assert len(replay_experiment(output).runs) == 1
 
 
+def test_trial_usage_fills_none_total_only_when_tokens_known() -> None:
+    harbor = HarborTrialResult(task_name="task", trial_name="trial")
+
+    filled = KediTrialResult(
+        state="completed",
+        usage={"total_tokens": None, "input_tokens": 5, "output_tokens": 3},
+    )
+    assert trial_usage(harbor, filled)["total_tokens"] == 8
+
+    input_only = KediTrialResult(state="completed", usage={"input_tokens": 5})
+    assert trial_usage(harbor, input_only)["total_tokens"] == 5
+
+    nothing_known = KediTrialResult(state="completed", usage={"total_tokens": None})
+    assert trial_usage(harbor, nothing_known)["total_tokens"] is None
+
+    known_total = KediTrialResult(
+        state="completed",
+        usage={"total_tokens": 12, "input_tokens": 5, "output_tokens": 3},
+    )
+    assert trial_usage(harbor, known_total)["total_tokens"] == 12
+
+
 def test_capture_helper_boundaries(tmp_path: Path) -> None:
     assert importlib.import_module("kedi_autobench.terminal_bench.__main__") is not None
     assert _load_json_if_present(tmp_path / "missing.json") == {}
@@ -646,7 +673,7 @@ def test_capture_helper_boundaries(tmp_path: Path) -> None:
     }
 
     no_usage = HarborTrialResult(task_name="task", trial_name="trial")
-    assert trial_usage(no_usage, None) == {"total_tokens": 0}
+    assert trial_usage(no_usage, None) == {"total_tokens": None}
     partial_usage = HarborTrialResult(
         task_name="task",
         trial_name="trial",
