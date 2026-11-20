@@ -470,6 +470,99 @@ def test_record_harbor_job_rejects_invalid_bounds(tmp_path: Path) -> None:
         record_harbor_job(job, tmp_path / "record-b", concurrency=0)
 
 
+def test_run_then_record_expands_tilde_and_dot_record_dir(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job = _job(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    def fake_run(*_args: Any, **_kwargs: Any) -> SimpleNamespace:
+        return SimpleNamespace(returncode=7)
+
+    def broken_recorder(*_args: Any, **_kwargs: Any) -> Path:
+        raise RuntimeError("capture failed")
+
+    monkeypatch.setattr("kedi_autobench.terminal_bench.runner.subprocess.run", fake_run)
+
+    assert (
+        run_then_record(
+            ["harbor", "run"],
+            job_dir=job,
+            output_dir=Path("."),
+            recorder=broken_recorder,
+        )
+        == 7
+    )
+    assert (tmp_path.parent / f"{tmp_path.name}.capture-error.json").is_file()
+
+    assert (
+        run_then_record(
+            ["harbor", "run"],
+            job_dir=job,
+            output_dir=Path("~/x"),
+            recorder=broken_recorder,
+        )
+        == 7
+    )
+    assert (tmp_path / "x.capture-error.json").is_file()
+    assert not (tmp_path / "~").exists()
+
+
+def test_run_then_record_passes_resolved_record_dir_to_recorder(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job = _job(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    seen: list[Path] = []
+
+    def fake_run(*_args: Any, **_kwargs: Any) -> SimpleNamespace:
+        return SimpleNamespace(returncode=0)
+
+    def recorder(*args: Any, **_kwargs: Any) -> Path:
+        seen.append(args[1])
+        return args[1]
+
+    monkeypatch.setattr("kedi_autobench.terminal_bench.runner.subprocess.run", fake_run)
+    assert (
+        run_then_record(
+            ["harbor", "run"],
+            job_dir=job,
+            output_dir=Path("~/x"),
+            recorder=recorder,
+        )
+        == 0
+    )
+    assert seen == [tmp_path / "x"]
+
+
+def test_cli_run_accepts_dot_record_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    job = _job(tmp_path)
+    work = tmp_path / "work"
+    work.mkdir()
+    monkeypatch.chdir(work)
+
+    assert (
+        main(
+            [
+                "run",
+                "--job-dir",
+                str(job),
+                "--record-dir",
+                ".",
+                sys.executable,
+                "-c",
+                "raise SystemExit(3)",
+            ]
+        )
+        == 3
+    )
+    assert (work / "experiment.yaml").is_file()
+
+
 def test_run_then_record_is_post_run_and_fail_open(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
