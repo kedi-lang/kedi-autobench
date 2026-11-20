@@ -727,6 +727,64 @@ def test_trial_usage_fills_none_total_only_when_tokens_known() -> None:
     assert trial_usage(harbor, known_total)["total_tokens"] == 12
 
 
+def test_sanitized_copy_redacts_secret_keys_in_jsonl(tmp_path: Path) -> None:
+    source = tmp_path / "events.jsonl"
+    source.write_text(
+        '{"password": "hunter2-plain-value", "api_key": "AKIA1234567890",'
+        ' "token": "tok-abcdef", "user": "alice"}\n'
+        '{"nested": {"password": "nested-secret"}, "items": [1, "plain"]}\n'
+        "\n"
+        "not json at all sk-plaintextsecret123456\n",
+        encoding="utf-8",
+    )
+    prepared = _sanitized_copy(source, relative="events.jsonl", root=tmp_path / "copy")
+    text = prepared.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    assert json.loads(lines[0]) == {
+        "api_key": "[REDACTED]",
+        "password": "[REDACTED]",
+        "token": "[REDACTED]",
+        "user": "alice",
+    }
+    second = json.loads(lines[1])
+    assert second["nested"]["password"] == "[REDACTED]"
+    assert second["items"] == [1, "plain"]
+    assert lines[2] == ""
+    assert "sk-plaintextsecret123456" not in lines[3]
+    assert "hunter2-plain-value" not in text
+    assert "nested-secret" not in text
+    assert text.endswith("\n")
+
+    no_trailing = tmp_path / "single.jsonl"
+    no_trailing.write_text('{"password": "x"}', encoding="utf-8")
+    prepared_single = _sanitized_copy(
+        no_trailing, relative="single.jsonl", root=tmp_path / "copy-single"
+    )
+    assert json.loads(prepared_single.read_text(encoding="utf-8")) == {"password": "[REDACTED]"}
+    assert not prepared_single.read_text(encoding="utf-8").endswith("\n")
+
+
+def test_record_harbor_job_redacts_secret_keys_in_jsonl_evidence(tmp_path: Path) -> None:
+    job = _job(tmp_path)
+    trial = next(path.parent for path in job.glob("*/result.json"))
+    (trial / "agent" / "events.jsonl").write_text(
+        '{"password": "hunter2-plain-value", "api_key": "AKIA1234567890"}\n',
+        encoding="utf-8",
+    )
+    output = tmp_path / "record"
+
+    record_harbor_job(job, output)
+
+    payload = b"\n".join(
+        path.read_bytes()
+        for path in output.rglob("*")
+        if path.is_file() and path.stat().st_size < 2_000_000
+    )
+    assert b"hunter2-plain-value" not in payload
+    assert b"AKIA1234567890" not in payload
+    assert b"[REDACTED]" in payload
+
+
 def test_capture_helper_boundaries(tmp_path: Path) -> None:
     assert importlib.import_module("kedi_autobench.terminal_bench.__main__") is not None
     assert _load_json_if_present(tmp_path / "missing.json") == {}

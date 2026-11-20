@@ -360,7 +360,8 @@ def _sanitized_copy(source: Path, *, relative: str, root: Path) -> Path:
         target.write_bytes(payload)
         return target
     text = payload.decode("utf-8", errors="replace")
-    if source.suffix.lower() == ".json":
+    suffix = source.suffix.lower()
+    if suffix == ".json":
         try:
             value = json.loads(text)
         except json.JSONDecodeError:
@@ -375,8 +376,28 @@ def _sanitized_copy(source: Path, *, relative: str, root: Path) -> Path:
                 )
                 + "\n"
             )
+    elif suffix == ".jsonl":
+        text = _sanitize_jsonl(text)
     target.write_text(redact_text(text), encoding="utf-8")
     return target
+
+
+def _sanitize_jsonl(text: str) -> str:
+    lines: list[str] = []
+    for line in text.splitlines():
+        if not line.strip():
+            lines.append(line)
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            lines.append(redact_text(line))
+        else:
+            lines.append(json.dumps(_sanitize_json(value), ensure_ascii=False, sort_keys=True))
+    result = "\n".join(lines)
+    if text.endswith("\n"):
+        result += "\n"
+    return result
 
 
 def _looks_like_text(payload: bytes) -> bool:
